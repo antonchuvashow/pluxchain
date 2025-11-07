@@ -1,0 +1,100 @@
+import hashlib
+import time
+import json
+
+
+class Transaction:
+    """
+    Класс, представляющий отдельную транзакцию в блокчейне.
+    Каждая транзакция содержит информацию об отправителе, получателе, сумме и метке времени.
+    """
+
+    def __init__(self, sender: str, receiver: str, amount: float, timestamp: float = None):
+        self.sender = sender                # Адрес или имя отправителя
+        self.receiver = receiver            # Адрес или имя получателя
+        self.amount = amount                # Сумма перевода
+        self.timestamp = timestamp or time.time()  # Время создания транзакции
+
+    def to_dict(self) -> dict:
+        """Возвращает транзакцию в виде словаря для сериализации."""
+        return {
+            "sender": self.sender,
+            "receiver": self.receiver,
+            "amount": self.amount,
+            "timestamp": self.timestamp
+        }
+
+    def calculate_hash(self) -> str:
+        """Возвращает хэш SHA-256 от данных транзакции."""
+        tx_string = json.dumps(self.to_dict(), sort_keys=True)
+        return hashlib.sha256(tx_string.encode()).hexdigest()
+
+
+class BlockHeader:
+    """
+    Заголовок блока, содержащий хэш предыдущего блока, корень Меркла, временную метку,
+    сложность и nonce, используемый для майнинга.
+    """
+
+    def __init__(self, previous_hash: str, merkle_root: str,
+                 timestamp: float = None, nonce: int = 0, difficulty: int = 4):
+        self.previous_hash = previous_hash
+        self.merkle_root = merkle_root
+        self.timestamp = timestamp or time.time()
+        self.nonce = nonce
+        self.difficulty = difficulty
+
+    def calculate_hash(self) -> str:
+        """Возвращает хэш заголовка блока."""
+        header_string = f"{self.previous_hash}{self.merkle_root}{self.timestamp}{self.nonce}{self.difficulty}"
+        return hashlib.sha256(header_string.encode()).hexdigest()
+
+
+class Block:
+    """
+    Класс блока, содержащего список транзакций, заголовок и метод майнинга.
+    """
+
+    def __init__(self, index: int, transactions: list, previous_hash: str, difficulty: int = 4):
+        self.index = index                                     # Индекс блока в цепочке
+        self.transactions = transactions                       # Список транзакций (объекты Transaction)
+        self.merkle_root = self.compute_merkle_root()           # Корень Меркла для проверки целостности транзакций
+        self.header = BlockHeader(previous_hash, self.merkle_root, difficulty=difficulty)
+        self.hash = self.mine_block()                           # Хэш найденного блока после майнинга
+
+    def compute_merkle_root(self) -> str:
+        """
+        Вычисляет корень для всех транзакций в блоке.
+        Используется для проверки целостности данных.
+        """
+        tx_hashes = [tx.calculate_hash() if isinstance(tx, Transaction)
+                     else hashlib.sha256(json.dumps(tx, sort_keys=True).encode()).hexdigest()
+                     for tx in self.transactions]
+        if not tx_hashes:
+            return hashlib.sha256().hexdigest()
+        while len(tx_hashes) > 1:
+            if len(tx_hashes) % 2 != 0:
+                tx_hashes.append(tx_hashes[-1])
+            tx_hashes = [
+                hashlib.sha256((tx_hashes[i] + tx_hashes[i + 1]).encode()).hexdigest()
+                for i in range(0, len(tx_hashes), 2)
+            ]
+        return tx_hashes[0]
+
+    def mine_block(self) -> str:
+        """
+        Выполняет процесс майнинга блока перебирает nonce, пока не будет найден хэш,
+        начинающийся с заданного количества нулей (в зависимости от сложности).
+        """
+        while True:
+            hash_val = self.header.calculate_hash()
+            if hash_val.startswith("0" * self.header.difficulty):
+                return hash_val
+            self.header.nonce += 1
+
+    def is_valid(self) -> bool:
+        """
+        Проверяет корректность блока
+        """
+        return (self.hash == self.header.calculate_hash() and
+                self.hash.startswith("0" * self.header.difficulty))
