@@ -9,11 +9,11 @@ class Transaction:
     Каждая транзакция содержит информацию об отправителе, получателе, сумме и метке времени.
     """
 
-    def __init__(self, sender: str, receiver: str, amount: float, timestamp: float = None):
-        self.sender = sender                # Адрес или имя отправителя
-        self.receiver = receiver            # Адрес или имя получателя
-        self.amount = amount                # Сумма перевода
-        self.timestamp = timestamp or time.time()  # Время создания транзакции
+    def __init__(self, sender: str, receiver: str, amount: float, timestamp: float = None) -> None:
+        self.sender: str = sender                # Адрес или имя отправителя
+        self.receiver: str = receiver            # Адрес или имя получателя
+        self.amount: float = amount                # Сумма перевода
+        self.timestamp: float = timestamp or time.time()  # Время создания транзакции
 
     def to_dict(self) -> dict:
         """Возвращает транзакцию в виде словаря для сериализации."""
@@ -37,12 +37,12 @@ class BlockHeader:
     """
 
     def __init__(self, previous_hash: str, merkle_root: str,
-                 timestamp: float = None, nonce: int = 0, difficulty: int = 4):
-        self.previous_hash = previous_hash
-        self.merkle_root = merkle_root
-        self.timestamp = timestamp or time.time()
-        self.nonce = nonce
-        self.difficulty = difficulty
+                 timestamp: float = None, nonce: int = 0, difficulty: int = 4) -> None:
+        self.previous_hash: str = previous_hash
+        self.merkle_root: str = merkle_root
+        self.timestamp: float = timestamp or time.time()
+        self.nonce: int = nonce
+        self.difficulty: int = difficulty
 
     def calculate_hash(self) -> str:
         """Возвращает хэш заголовка блока."""
@@ -55,12 +55,12 @@ class Block:
     Класс блока, содержащего список транзакций, заголовок и метод майнинга.
     """
 
-    def __init__(self, index: int, transactions: list, previous_hash: str, difficulty: int = 4):
-        self.index = index                                     # Индекс блока в цепочке
-        self.transactions = transactions                       # Список транзакций (объекты Transaction)
-        self.merkle_root = self.compute_merkle_root()           # Корень Меркла для проверки целостности транзакций
-        self.header = BlockHeader(previous_hash, self.merkle_root, difficulty=difficulty)
-        self.hash = self.mine_block()                           # Хэш найденного блока после майнинга
+    def __init__(self, index: int, transactions: list[Transaction], previous_hash: str, difficulty: int = 4) -> None:
+        self.index: int = index                                     # Индекс блока в цепочке
+        self.transactions: list[Transaction] = transactions                       # Список транзакций (объекты Transaction)
+        self.merkle_root: str = self.compute_merkle_root()           # Корень Меркла для проверки целостности транзакций
+        self.header: BlockHeader = BlockHeader(previous_hash, self.merkle_root, difficulty=difficulty)
+        self.hash: str = self.mine_block()                           # Хэш найденного блока после майнинга
 
     def compute_merkle_root(self) -> str:
         """
