@@ -3,40 +3,19 @@ from http import HTTPStatus
 import uvicorn
 from fastapi import FastAPI, HTTPException
 
-from core import db_session
+from db import db_session
+from db.blockchain_dao import BlockchainDAO
 from models.api_models import Block as APIBlock
-from models.db_models import Block as ORMBlock, Transaction as ORMTransaction
+from models.core_models import Blockchain
 
 app = FastAPI()
+dao = BlockchainDAO()
+blockchain = Blockchain(dao)
 
 @app.post("/block", status_code=HTTPStatus.OK)
 def create_block(block: APIBlock):
         try:
-            with db_session.create_session() as session:
-
-                orm_block = ORMBlock(
-                    index=block.index,
-                    previous_hash=block.header.previous_hash if block.header else None,
-                    merkle_root=block.header.merkle_root if block.header else None,
-                    timestamp=block.header.timestamp if block.header else None,
-                    nonce=block.header.nonce if block.header else None,
-                    difficulty=block.header.difficulty if block.header else None,
-                    hash=block.hash
-                )
-                if block.transactions:
-                    for tx in block.transactions:
-                        orm_tx = ORMTransaction(
-                            sender=tx.sender,
-                            receiver=tx.receiver,
-                            amount=tx.amount,
-                            timestamp=tx.timestamp,
-                            block=orm_block
-                        )
-                        session.add(orm_tx)
-
-                session.add(orm_block)
-                session.commit()
-
+            blockchain.new_block(block)
         except Exception as e:
             return HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=str(e))
         return HTTPStatus.OK

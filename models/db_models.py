@@ -1,7 +1,7 @@
 from sqlalchemy import Integer, String, Float, ForeignKey
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 
-from core.db_session import SqlAlchemyBase
+from db.db_session import SqlAlchemyBase
 
 
 class Transaction(SqlAlchemyBase):

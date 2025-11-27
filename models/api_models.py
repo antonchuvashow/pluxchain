@@ -10,11 +10,6 @@ class Transaction(BaseModel):
     timestamp: float
     block_id: int
 
-    @classmethod
-    def from_class(cls, transaction: core_models.Transaction) -> "Transaction":
-        return Transaction(sender=transaction.sender, receiver=transaction.receiver,
-                           amount=transaction.amount, timestamp=transaction.timestamp)
-
     def to_orm(self) -> db_models.Transaction:
         return db_models.Transaction(sender=self.sender, receiver=self.receiver,)
 
