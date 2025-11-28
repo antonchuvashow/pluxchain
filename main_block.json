@@ -1,0 +1,19 @@
+[
+    {
+        "index": 0,
+        "transactions": [
+            {
+                "sender": "system",
+                "receiver": "network",
+                "amount": 0,
+                "timestamp": 1762536758.999883
+            }
+        ],
+        "previous_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+        "merkle_root": "d08d8a555451351955e1de2ba55ae19b2f80781d07b47e2981b0f97eb1ccaa8d",
+        "timestamp": 1762536758.9999108,
+        "nonce": 41833,
+        "difficulty": 4,
+        "hash": "000038526723bcbae0c1c1c1e84a81e317b96062408a3ef55f9561daed0c724f"
+    }
+]

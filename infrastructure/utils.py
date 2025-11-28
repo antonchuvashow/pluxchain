@@ -1,6 +1,6 @@
 import json
 import os
-from domain.models import Transaction, Block
+from models.core_models import Transaction, Block
 
 
 def save_block(block, filepath: str):
