@@ -14,6 +14,13 @@ class Transaction(BaseModel):
         return db_models.Transaction(sender=self.sender, receiver=self.receiver,)
 
 
+class SignedTransaction(BaseModel):
+    """Обёртка: транзакция + данные для валидации."""
+    transaction: Transaction
+    signature: str
+    public_key: str
+
+
 class BlockHeader(BaseModel):
     previous_hash: str | None = None
     block_id: str | None = None

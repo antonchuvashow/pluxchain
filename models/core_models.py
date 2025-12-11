@@ -128,4 +128,3 @@ class Blockchain(object):
     def last_block(self) -> Block:
         # Возвращает последний блок в цепочке
         return self.chain[-1]
-
