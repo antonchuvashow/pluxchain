@@ -4,6 +4,8 @@ import time
 import json
 from typing import TYPE_CHECKING
 
+from config import settings
+
 if TYPE_CHECKING:
     from db.blockchain_dao import BlockchainDAO
     from models import api_models
@@ -43,7 +45,7 @@ class BlockHeader:
     """
 
     def __init__(self, previous_hash: str, merkle_root: str,
-                 timestamp: float = None, nonce: int = 0, difficulty: int = 4) -> None:
+                 timestamp: float = None, nonce: int = 0, difficulty: int = settings.difficulty) -> None:
         self.previous_hash: str = previous_hash
         self.merkle_root: str = merkle_root
         self.timestamp: float = timestamp or time.time()
@@ -61,7 +63,7 @@ class Block:
     Класс блока, содержащего список транзакций, заголовок и метод майнинга.
     """
 
-    def __init__(self, index: int, transactions: list[Transaction], previous_hash: str, difficulty: int = 4) -> None:
+    def __init__(self, index: int, transactions: list[Transaction], previous_hash: str, difficulty: int = settings.difficulty) -> None:
         self.index: int = index
         self.transactions: list[Transaction] = transactions
         self.merkle_root: str = self.compute_merkle_root()
@@ -107,7 +109,7 @@ def create_genesis_block() -> Block:
     Генерирует первый (генезис) блок блокчейна.
     """
     genesis_tx = Transaction("system", "0" * 40, 1000.0)
-    genesis_block = Block(index=1, transactions=[genesis_tx], previous_hash="0" * 64)
+    genesis_block = Block(index=1, transactions=[genesis_tx], previous_hash="0" * 64, difficulty=settings.difficulty)
     return genesis_block
 
 

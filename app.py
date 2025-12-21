@@ -1,18 +1,15 @@
 from contextlib import asynccontextmanager
 from http import HTTPStatus
 import uvicorn
-import os
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
+from config import settings
 from db import db_session
 from db.blockchain_dao import BlockchainDAO
 from models.api_models import Block as APIBlock, SignedTransaction
 from models.core_models import Blockchain, Transaction, Block
 from services.transaction_validator import TransactionValidator
-
-# --- Application Configuration ---
-MINING_REWARD = 10.0
 
 # --- Global State ---
 dao: BlockchainDAO | None = None
@@ -23,9 +20,8 @@ blockchain: Blockchain | None = None
 async def lifespan(app: FastAPI):
     global dao, blockchain
     print("Initializing application...")
-    db_path = os.getenv("DATABASE_URL", "db/block.sqlite")
-    print(f"Using database at: {db_path}")
-    db_session.global_init(db_path)
+    print(f"Using database at: {settings.database_url}")
+    db_session.global_init(settings.database_url)
     dao = BlockchainDAO()
     blockchain = Blockchain(dao)
     print("Initialization complete.")
@@ -75,32 +71,26 @@ def get_pending_transactions():
 
 @app.post("/blocks/mine", status_code=HTTPStatus.CREATED)
 def mine_block(request: MineRequest):
-    # 1. Create the mining reward transaction (the "coinbase" transaction)
-    # This transaction has no sender in the traditional sense and is allowed by the validator.
     reward_tx = Transaction(
         sender=TransactionValidator.SYSTEM_ADDRESS,
         receiver=request.miner_address,
-        amount=MINING_REWARD
+        amount=settings.mining_reward
     )
 
-    # 2. Get pending transactions and add the reward transaction to the list
     transactions_for_block = blockchain.current_transactions.copy()
-    transactions_for_block.insert(0, reward_tx) # By convention, reward is the first transaction
+    transactions_for_block.insert(0, reward_tx)
 
-    # 3. Determine the next block's properties
     last_block_orm = dao.get_last_block()
     previous_hash = last_block_orm.hash if last_block_orm else "0" * 64
     new_index = (last_block_orm.index + 1) if last_block_orm else 1
 
-    # 4. Create and mine the new block
     new_core_block = Block(
         index=new_index,
         transactions=transactions_for_block,
         previous_hash=previous_hash,
-        difficulty=4
+        difficulty=settings.difficulty
     )
 
-    # 5. Save the block and clear the pending transaction pool
     new_api_block = APIBlock.from_core_block(new_core_block)
     blockchain.new_block(new_api_block)
     blockchain.current_transactions = []
@@ -111,7 +101,7 @@ def mine_block(request: MineRequest):
             "index": new_api_block.index,
             "hash": new_api_block.hash,
             "transactions_count": len(new_api_block.transactions),
-            "miner_reward": MINING_REWARD,
+            "miner_reward": settings.mining_reward,
             "miner_address": request.miner_address
         }
     }
