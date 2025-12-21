@@ -17,6 +17,7 @@ from models.core_models import Blockchain, Transaction, Block
 from services.transaction_validator import TransactionValidator
 from web.routes import router as web_router
 from web.connection_manager import manager
+from infrastructure.utils import generate_keys, get_address_from_public_key # Import utility functions
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -28,22 +29,43 @@ blockchain: Blockchain | None = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global dao, blockchain
-    print("Initializing application...")
+    logger.info("Initializing application...")
     db_path = os.getenv("DATABASE_URL", "db/block.sqlite")
-    print(f"Using database at: {db_path}")
+    logger.info(f"Using database at: {db_path}")
     db_session.global_init(db_path)
     dao = BlockchainDAO()
     blockchain = Blockchain(dao)
     logger.info("Initialization completed.")
 
-    # --- Регистрация узла ---
-    blockchain.register_node(settings.my_address)
+    # --- Node Cryptographic Identity ---
+    # Generate or load node's private/public keys and blockchain address
+    if not settings.node_private_key or not settings.node_public_key:
+        private_key, public_key = generate_keys()
+        settings.node_private_key = private_key
+        settings.node_public_key = public_key
+        settings.node_blockchain_address = get_address_from_public_key(public_key)
+        logger.warning(
+            "Node keys not found in environment. Generated new ones. "
+            f"Private Key: {private_key}, Public Key: {public_key}, Address: {settings.node_blockchain_address}. "
+            "Please save these to your .env file for consistent node identity."
+        )
+    else:
+        # Ensure blockchain address is derived if keys are present
+        settings.node_blockchain_address = get_address_from_public_key(settings.node_public_key)
+        logger.info(f"Node identity loaded. Address: {settings.node_blockchain_address}")
+
+
+    # --- Node Network Registration ---
+    # Register this node's network address (host:port) with itself and seed nodes
+    blockchain.register_node(settings.my_network_address)
 
     if settings.seed_nodes:
         async with httpx.AsyncClient() as client:
             for node_url in settings.seed_nodes:
                 try:
-                    await client.post(f"http://{node_url}/nodes/register", json={"address": settings.my_address})
+                    # Register self (my_network_address) with seed node
+                    await client.post(f"http://{node_url}/nodes/register", json={"address": settings.my_network_address})
+                    # Get all nodes from seed node and register them
                     response = await client.get(f"http://{node_url}/nodes")
                     if response.status_code == 200:
                         nodes = response.json().get("nodes", [])
@@ -53,7 +75,7 @@ async def lifespan(app: FastAPI):
                     logger.error(f"Couldn't connect to seed-node {node_url}: {e}")
 
     yield
-    print("Shutting down.")
+    logger.info("Shutting down.")
 
 
 app = FastAPI(
@@ -80,10 +102,6 @@ app.include_router(web_router, prefix="/panel", tags=["Веб-панель"])
 
 
 # --- API Models for Requests ---
-class MineRequest(BaseModel):
-    miner_address: str = Field(..., description="Адрес кошелька майнера, куда будет начислена награда")
-
-
 class NodeRegisterRequest(BaseModel):
     address: str = Field(..., example="127.0.0.1:8001", description="Адрес узла (хост:порт)")
 
@@ -141,6 +159,17 @@ async def resolve_nodes():
     return {"message": message}
 
 
+@app.get("/node/address", tags=["Узел"], summary="Получить блокчейн-адрес узла")
+def get_node_blockchain_address():
+    """
+    **Возвращает блокчейн-адрес текущего узла.**
+
+    Этот адрес используется для получения наград за майнинг и может быть использован
+    для отправки транзакций на этот узел.
+    """
+    return {"node_blockchain_address": settings.node_blockchain_address}
+
+
 # ============== API ENDPOINTS ==============
 
 @app.post("/transactions", status_code=HTTPStatus.CREATED, tags=["Транзакции"], summary="Отправка новой транзакции")
@@ -189,7 +218,7 @@ def get_pending_transactions():
 
 
 @app.post("/blocks/mine", status_code=HTTPStatus.CREATED, tags=["Блокчейн"], summary="Майнинг нового блока")
-async def mine_block(request: MineRequest):
+async def mine_block():
     """
     **Запускает процесс майнинга (Proof-of-Work).**
 
@@ -199,9 +228,10 @@ async def mine_block(request: MineRequest):
     3. Подбирает `nonce`, чтобы хеш блока удовлетворял сложности сети.
     4. Сохраняет блок в БД и оповещает сеть.
 
-    - **miner_address**: Адрес кошелька, на который придет награда.
+    Награда за майнинг всегда начисляется на блокчейн-адрес самого узла, который выполняет майнинг.
     """
-    reward_tx = Transaction(sender=settings.system_address, receiver=request.miner_address,
+    # Награда всегда идет на блокчейн-адрес узла, который майнит
+    reward_tx = Transaction(sender=settings.system_address, receiver=settings.node_blockchain_address,
                             amount=settings.mining_reward)
     transactions_for_block = blockchain.current_transactions.copy()
     transactions_for_block.insert(0, reward_tx)
@@ -231,7 +261,7 @@ async def mine_block(request: MineRequest):
             "hash": new_api_block.hash,
             "transactions_count": len(new_api_block.transactions),
             "miner_reward": settings.mining_reward,
-            "miner_address": request.miner_address
+            "miner_address": settings.node_blockchain_address # Теперь всегда блокчейн-адрес узла
         }
     }
 
