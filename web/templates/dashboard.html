@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>PluxChain Node Panel</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <h1>PluxChain Node Dashboard</h1>
+    <hr>
+    <h2>Node Status</h2>
+    <ul>
+        <li><strong>Chain Length:</strong> {{ chain_length }} blocks</li>
+        <li><strong>Pending Transactions:</strong> {{ pending_tx_count }}</li>
+    </ul>
+
+    <h2>Latest Blocks</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Index</th>
+                <th>Hash</th>
+                <th>Transactions</th>
+                <th>Timestamp</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for block in latest_blocks %}
+            <tr>
+                <td>{{ block.index }}</td>
+                <td><a href="/panel/block/{{ block.index }}">{{ block.hash[:20] }}...</a></td>
+                <td>{{ block.transactions_count }}</td>
+                <td>{{ block.timestamp }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>

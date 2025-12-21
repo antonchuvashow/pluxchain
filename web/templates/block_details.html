@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Block {{ block.index }} - PluxChain</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <h1>Block #{{ block.index }}</h1>
+    <a href="/panel/">&larr; Back to Dashboard</a>
+    <hr>
+    <h2>Block Details</h2>
+    <ul>
+        <li><strong>Hash:</strong> {{ block.hash }}</li>
+        <li><strong>Previous Hash:</strong> {{ block.previous_hash }}</li>
+        <li><strong>Timestamp:</strong> {{ block.timestamp | datetime }}</li>
+        <li><strong>Nonce:</strong> {{ block.nonce }}</li>
+        <li><strong>Difficulty:</strong> {{ block.difficulty }}</li>
+        <li><strong>Merkle Root:</strong> {{ block.merkle_root }}</li>
+    </ul>
+
+    <h2>Transactions ({{ transactions|length }})</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Sender</th>
+                <th>Receiver</th>
+                <th>Amount</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for tx in transactions %}
+            <tr>
+                <td>{{ tx.sender[:40] }}...</td>
+                <td>{{ tx.receiver[:40] }}...</td>
+                <td>{{ tx.amount }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>

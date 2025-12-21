@@ -3,6 +3,7 @@ from http import HTTPStatus
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+from fastapi.staticfiles import StaticFiles
 
 from config import settings
 from db import db_session
@@ -10,6 +11,7 @@ from db.blockchain_dao import BlockchainDAO
 from models.api_models import Block as APIBlock, SignedTransaction
 from models.core_models import Blockchain, Transaction, Block
 from services.transaction_validator import TransactionValidator
+from web.routes import router as web_router
 
 # --- Global State ---
 dao: BlockchainDAO | None = None
@@ -31,13 +33,17 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+# --- Mount Static Files and Include Web Router ---
+app.mount("/static", StaticFiles(directory="web/static"), name="static")
+app.include_router(web_router, prefix="/panel", tags=["Web Panel"])
+
 
 # --- API Models for Requests ---
 class MineRequest(BaseModel):
     miner_address: str
 
 
-# ============== ТРАНЗАКЦИИ ==============
+# ============== API ENDPOINTS ==============
 
 @app.post("/transactions", status_code=HTTPStatus.CREATED)
 def receive_transaction(signed_tx: SignedTransaction):
@@ -66,8 +72,6 @@ def get_pending_transactions():
         "transactions": [tx.to_dict() for tx in blockchain.current_transactions]
     }
 
-
-# ============== МАЙНИНГ ==============
 
 @app.post("/blocks/mine", status_code=HTTPStatus.CREATED)
 def mine_block(request: MineRequest):
@@ -107,8 +111,6 @@ def mine_block(request: MineRequest):
     }
 
 
-# ============== ЦЕПОЧКА ==============
-
 @app.get("/chain")
 def get_chain():
     blocks = dao.get_all_blocks()
@@ -135,8 +137,6 @@ def get_block(block_id: int):
     transactions = dao.get_transactions_by_block(block_id)
     return {"block": block, "transactions": transactions}
 
-
-# ============== БАЛАНС ==============
 
 @app.get("/balance/{address}")
 def get_balance(address: str):
