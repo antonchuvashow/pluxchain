@@ -59,6 +59,13 @@ class BlockchainDAO:
         with create_session() as session:
             return session.query(Transaction).filter(Transaction.block_id == block_id).all()
 
+    def get_all_transactions(self) -> list[Transaction]:
+        """
+        Получить все транзакции из всех блоков.
+        """
+        with create_session() as session:
+            return session.query(Transaction).all()
+
     def get_transaction(self, tx_id: int) -> Transaction | None:
         """
         Получить транзакцию по ID.

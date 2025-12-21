@@ -1,41 +1,58 @@
+from contextlib import asynccontextmanager
 from http import HTTPStatus
-
 import uvicorn
+import os
 from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 
 from db import db_session
 from db.blockchain_dao import BlockchainDAO
-from models.api_models import Block as APIBlock, Transaction as APITransaction, SignedTransaction, \
-    BlockHeader as APIBlockHeader
+from models.api_models import Block as APIBlock, SignedTransaction
 from models.core_models import Blockchain, Transaction, Block
 from services.transaction_validator import TransactionValidator
 
-app = FastAPI()
-dao = BlockchainDAO()
-blockchain = Blockchain(dao)
+# --- Application Configuration ---
+MINING_REWARD = 10.0
+
+# --- Global State ---
+dao: BlockchainDAO | None = None
+blockchain: Blockchain | None = None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global dao, blockchain
+    print("Initializing application...")
+    db_path = os.getenv("DATABASE_URL", "db/block.sqlite")
+    print(f"Using database at: {db_path}")
+    db_session.global_init(db_path)
+    dao = BlockchainDAO()
+    blockchain = Blockchain(dao)
+    print("Initialization complete.")
+    yield
+    print("Shutting down.")
+
+
+app = FastAPI(lifespan=lifespan)
+
+
+# --- API Models for Requests ---
+class MineRequest(BaseModel):
+    miner_address: str
 
 
 # ============== ТРАНЗАКЦИИ ==============
 
-
 @app.post("/transactions", status_code=HTTPStatus.CREATED)
 def receive_transaction(signed_tx: SignedTransaction):
-    """
-    Принимает подписанную транзакцию.
-    """
-
-    # Валидация
     validator = TransactionValidator(
         dao=dao,
         pending_transactions=blockchain.current_transactions
     )
-
     result = validator.validate(signed_tx)
-
     if not result.is_valid:
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail=result.error)
 
-    # Добавляем чистую транзакцию в пул
     tx = Transaction(
         sender=signed_tx.transaction.sender,
         receiver=signed_tx.transaction.receiver,
@@ -43,19 +60,11 @@ def receive_transaction(signed_tx: SignedTransaction):
         timestamp=signed_tx.transaction.timestamp
     )
     blockchain.current_transactions.append(tx)
-
-    return {
-        "message": "Transaction accepted",
-        "tx_hash": tx.calculate_hash(),
-        "pending_count": len(blockchain.current_transactions)
-    }
+    return {"message": "Transaction accepted", "tx_hash": tx.calculate_hash()}
 
 
 @app.get("/transactions/pending")
 def get_pending_transactions():
-    """
-    Возвращает список необработанных транзакций.
-    """
     return {
         "count": len(blockchain.current_transactions),
         "transactions": [tx.to_dict() for tx in blockchain.current_transactions]
@@ -65,80 +74,45 @@ def get_pending_transactions():
 # ============== МАЙНИНГ ==============
 
 @app.post("/blocks/mine", status_code=HTTPStatus.CREATED)
-def mine_block():
-    """
-    Берёт транзакции из пула, формирует и майнит новый блок.
-    """
-    # 1. Проверяем есть ли транзакции
-    if not blockchain.current_transactions:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail="No pending transactions to mine"
-        )
+def mine_block(request: MineRequest):
+    # 1. Create the mining reward transaction (the "coinbase" transaction)
+    # This transaction has no sender in the traditional sense and is allowed by the validator.
+    reward_tx = Transaction(
+        sender=TransactionValidator.SYSTEM_ADDRESS,
+        receiver=request.miner_address,
+        amount=MINING_REWARD
+    )
 
-    # 2. Получаем данные последнего блока
-    last_block = dao.get_last_block()
+    # 2. Get pending transactions and add the reward transaction to the list
+    transactions_for_block = blockchain.current_transactions.copy()
+    transactions_for_block.insert(0, reward_tx) # By convention, reward is the first transaction
 
-    if last_block:
-        previous_hash = last_block.hash
-        new_index = last_block.index + 1
-    else:
-        previous_hash = "0" * 64
-        new_index = 1
+    # 3. Determine the next block's properties
+    last_block_orm = dao.get_last_block()
+    previous_hash = last_block_orm.hash if last_block_orm else "0" * 64
+    new_index = (last_block_orm.index + 1) if last_block_orm else 1
 
-    # 3. Создаём и майним блок
-    new_block = Block(
+    # 4. Create and mine the new block
+    new_core_block = Block(
         index=new_index,
-        transactions=blockchain.current_transactions.copy(),
+        transactions=transactions_for_block,
         previous_hash=previous_hash,
         difficulty=4
     )
 
-    # 4. Конвертируем транзакции в API модель
-    api_transactions = [
-        APITransaction(
-            sender=tx.sender,
-            receiver=tx.receiver,
-            amount=tx.amount,
-            timestamp=tx.timestamp,
-            block_id=new_block.index
-        )
-        for tx in new_block.transactions
-    ]
-
-    # 5. Формируем API блок
-    api_block = APIBlock(
-        index=new_block.index,
-        transactions=api_transactions,
-        merkle_root=new_block.merkle_root,
-        header=APIBlockHeader(
-            previous_hash=new_block.header.previous_hash,
-            merkle_root=new_block.merkle_root,
-            timestamp=new_block.header.timestamp,
-            nonce=new_block.header.nonce,
-            difficulty=new_block.header.difficulty
-        ),
-        hash=new_block.hash
-    )
-
-    # 6. Сохраняем в БД
-    blockchain.new_block(api_block)
-
-    # 7. Очищаем пул
-    mined_count = len(blockchain.current_transactions)
+    # 5. Save the block and clear the pending transaction pool
+    new_api_block = APIBlock.from_core_block(new_core_block)
+    blockchain.new_block(new_api_block)
     blockchain.current_transactions = []
 
     return {
         "message": "Block mined successfully",
         "block": {
-            "index": new_block.index,
-            "hash": new_block.hash,
-            "previous_hash": new_block.header.previous_hash,
-            "nonce": new_block.header.nonce,
-            "difficulty": new_block.header.difficulty,
-            "transactions_count": mined_count,
-            "merkle_root": new_block.merkle_root,
-            "timestamp": new_block.header.timestamp
+            "index": new_api_block.index,
+            "hash": new_api_block.hash,
+            "transactions_count": len(new_api_block.transactions),
+            "miner_reward": MINING_REWARD,
+            "miner_address": request.miner_address
         }
     }
 
@@ -147,9 +121,6 @@ def mine_block():
 
 @app.get("/chain")
 def get_chain():
-    """
-    Возвращает всю цепочку блоков.
-    """
     blocks = dao.get_all_blocks()
     return {
         "length": len(blocks),
@@ -166,64 +137,28 @@ def get_chain():
     }
 
 
-@app.get("/blocks")
-def get_blocks():
-    """
-    Список всех блоков.
-    """
-    return dao.get_all_blocks()
-
-
 @app.get("/blocks/{block_id}")
 def get_block(block_id: int):
-    """
-    Получить конкретный блок по ID.
-    """
     block = dao.get_block(block_id)
     if not block:
         raise HTTPException(status_code=404, detail="Block not found")
-
     transactions = dao.get_transactions_by_block(block_id)
-    return {
-        "block": block,
-        "transactions": transactions
-    }
+    return {"block": block, "transactions": transactions}
 
 
 # ============== БАЛАНС ==============
 
 @app.get("/balance/{address}")
 def get_balance(address: str):
-    """
-    Вычисляет баланс адреса по всем транзакциям в блокчейне.
-    """
-    blocks = dao.get_all_blocks()
     balance = 0.0
-
-    for block in blocks:
-        transactions = dao.get_transactions_by_block(block.id)
-        for tx in transactions:
-            if tx.receiver == address:
-                balance += tx.amount
-            if tx.sender == address:
-                balance -= tx.amount
-
-    return {
-        "address": address,
-        "balance": balance
-    }
-
-
-@app.post("/block", status_code=HTTPStatus.OK)
-def create_block(block: APIBlock):
-    try:
-        blockchain.new_block(block)
-    except Exception as e:
-        return HTTPException(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, detail=str(e))
-    return HTTPStatus.OK
+    all_transactions = dao.get_all_transactions()
+    for tx in all_transactions:
+        if tx.receiver == address:
+            balance += tx.amount
+        if tx.sender == address:
+            balance -= tx.amount
+    return {"address": address, "balance": balance}
 
 
 if __name__ == "__main__":
-    db_session.global_init("db/block.sqlite")
-
     uvicorn.run(app, host="0.0.0.0", port=8000)

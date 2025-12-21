@@ -1,10 +1,12 @@
+from __future__ import annotations
 import hashlib
 import time
 import json
+from typing import TYPE_CHECKING
 
-from db.blockchain_dao import BlockchainDAO
-from infrastructure.utils import create_genesis_block
-from models.api_models import Block as APIBlock
+if TYPE_CHECKING:
+    from db.blockchain_dao import BlockchainDAO
+    from models import api_models
 
 
 class Transaction:
@@ -14,10 +16,10 @@ class Transaction:
     """
 
     def __init__(self, sender: str, receiver: str, amount: float, timestamp: float = None) -> None:
-        self.sender: str = sender                # Адрес или имя отправителя
-        self.receiver: str = receiver            # Адрес или имя получателя
-        self.amount: float = amount                # Сумма перевода
-        self.timestamp: float = timestamp or time.time()  # Время создания транзакции
+        self.sender: str = sender
+        self.receiver: str = receiver
+        self.amount: float = amount
+        self.timestamp: float = timestamp or time.time()
 
     def to_dict(self) -> dict:
         """Возвращает транзакцию в виде словаря для сериализации."""
@@ -60,20 +62,17 @@ class Block:
     """
 
     def __init__(self, index: int, transactions: list[Transaction], previous_hash: str, difficulty: int = 4) -> None:
-        self.index: int = index                                     # Индекс блока в цепочке
-        self.transactions: list[Transaction] = transactions                       # Список транзакций (объекты Transaction)
-        self.merkle_root: str = self.compute_merkle_root()           # Корень Меркла для проверки целостности транзакций
+        self.index: int = index
+        self.transactions: list[Transaction] = transactions
+        self.merkle_root: str = self.compute_merkle_root()
         self.header: BlockHeader = BlockHeader(previous_hash, self.merkle_root, difficulty=difficulty)
-        self.hash: str = self.mine_block()                           # Хэш найденного блока после майнинга
+        self.hash: str = self.mine_block()
 
     def compute_merkle_root(self) -> str:
         """
         Вычисляет корень для всех транзакций в блоке.
-        Используется для проверки целостности данных.
         """
-        tx_hashes = [tx.calculate_hash() if isinstance(tx, Transaction)
-                     else hashlib.sha256(json.dumps(tx, sort_keys=True).encode()).hexdigest()
-                     for tx in self.transactions]
+        tx_hashes = [tx.calculate_hash() for tx in self.transactions]
         if not tx_hashes:
             return hashlib.sha256().hexdigest()
         while len(tx_hashes) > 1:
@@ -87,8 +86,7 @@ class Block:
 
     def mine_block(self) -> str:
         """
-        Выполняет процесс майнинга блока перебирает nonce, пока не будет найден хэш,
-        начинающийся с заданного количества нулей (в зависимости от сложности).
+        Выполняет процесс майнинга блока.
         """
         while True:
             hash_val = self.header.calculate_hash()
@@ -98,23 +96,34 @@ class Block:
 
     def is_valid(self) -> bool:
         """
-        Проверяет корректность блока
+        Проверяет корректность блока.
         """
         return (self.hash == self.header.calculate_hash() and
                 self.hash.startswith("0" * self.header.difficulty))
 
 
+def create_genesis_block() -> Block:
+    """
+    Генерирует первый (генезис) блок блокчейна.
+    """
+    genesis_tx = Transaction("system", "0" * 40, 1000.0)
+    genesis_block = Block(index=1, transactions=[genesis_tx], previous_hash="0" * 64)
+    return genesis_block
+
+
 class Blockchain(object):
-    def __init__(self, dao: BlockchainDAO):
-        self.chain = []
-        self.current_transactions = []
+    def __init__(self, dao: "BlockchainDAO"):
+        from models.api_models import Block as APIBlock
+        self.chain: list[APIBlock] = []
+        self.current_transactions: list[Transaction] = []
         self.dao = dao
 
-        self.new_block(create_genesis_block())
+        genesis = create_genesis_block()
+        api_block = APIBlock.from_core_block(genesis)
+        self.new_block(api_block)
 
-    def new_block(self, block: APIBlock) -> APIBlock:
-        # Создает новый блок и вносит его в цепь
-        self.current_transactions = []
+    def new_block(self, block: "api_models.Block") -> "api_models.Block":
+        """Adds a new block to the chain."""
         self.dao.add_block(block.to_orm(), [transaction.to_orm() for transaction in block.transactions])
         self.chain.append(block)
         return block
@@ -122,9 +131,10 @@ class Blockchain(object):
     def new_transaction(self, transaction: Transaction):
         # Вносит новую транзакцию в список транзакций
         self.current_transactions.append(transaction)
+        # Return the index of the block that will hold this transaction
         return self.last_block.index + 1
 
     @property
-    def last_block(self) -> Block:
+    def last_block(self) -> "api_models.Block":
         # Возвращает последний блок в цепочке
         return self.chain[-1]
