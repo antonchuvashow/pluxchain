@@ -1,5 +1,5 @@
-from models.core_models import Transaction, Block
-from infrastructure.utils import create_genesis_block, save_block
+from models.core_models import Transaction, Block, create_genesis_block
+from infrastructure.utils import save_block
 
 main_block = create_genesis_block()
 transactions = []
