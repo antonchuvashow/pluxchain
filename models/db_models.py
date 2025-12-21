@@ -1,7 +1,11 @@
 from sqlalchemy import Integer, String, Float, ForeignKey
 from sqlalchemy.orm import relationship, Mapped, mapped_column
+from typing import TYPE_CHECKING
 
 from db.db_session import SqlAlchemyBase
+
+if TYPE_CHECKING:
+    from models.api_models import BlockHeader
 
 
 class Transaction(SqlAlchemyBase):
@@ -38,3 +42,14 @@ class Block(SqlAlchemyBase):
         back_populates="block",
         cascade="all, delete-orphan"
     )
+
+    @property
+    def header(self) -> "BlockHeader":
+        from models.api_models import BlockHeader
+        return BlockHeader(
+            previous_hash=self.previous_hash,
+            merkle_root=self.merkle_root,
+            timestamp=self.timestamp,
+            nonce=self.nonce,
+            difficulty=self.difficulty,
+        )

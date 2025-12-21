@@ -1,11 +1,12 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from models import db_models
+from models import core_models # Added for runtime use
 
 if TYPE_CHECKING:
-    from models import core_models
+    pass # core_models is now imported above
 
 
 class Transaction(BaseModel):
@@ -23,13 +24,14 @@ class Transaction(BaseModel):
             timestamp=self.timestamp,
             block_id=self.block_id
         )
+    
+    model_config = ConfigDict(from_attributes=True) # Re-added this line
 
 
 class SignedTransaction(BaseModel):
     """Обёртка: транзакция + данные для валидации."""
     transaction: Transaction
     signature: str
-    # public_key is now optional as it is not always needed
     public_key: str | None = None
 
 
@@ -39,6 +41,7 @@ class BlockHeader(BaseModel):
     timestamp: float
     nonce: int
     difficulty: int
+    hash: str
 
     @classmethod
     def from_core(cls, block_header: "core_models.BlockHeader") -> "BlockHeader":
@@ -47,8 +50,11 @@ class BlockHeader(BaseModel):
             merkle_root=block_header.merkle_root,
             timestamp=block_header.timestamp,
             nonce=block_header.nonce,
-            difficulty=block_header.difficulty
+            difficulty=block_header.difficulty,
+            hash=block_header.calculate_hash()
         )
+    
+    # Removed: model_config = ConfigDict(from_attributes=True) - Keep this removed for BlockHeader
 
 
 class Block(BaseModel):
@@ -90,3 +96,39 @@ class Block(BaseModel):
             header=api_header,
             hash=block.hash
         )
+
+    @classmethod
+    def from_db_model(cls, block_orm: db_models.Block) -> "Block": # Renamed from from_orm
+        """Converts a db_models.Block to an API Block."""
+        # Create a core_models.BlockHeader instance to calculate the header's hash
+        core_header_instance = core_models.BlockHeader(
+            previous_hash=block_orm.previous_hash,
+            merkle_root=block_orm.merkle_root,
+            timestamp=block_orm.timestamp,
+            nonce=block_orm.nonce,
+            difficulty=block_orm.difficulty
+        )
+        header_hash = core_header_instance.calculate_hash()
+
+        # Create the APIBlockHeader explicitly
+        api_header = BlockHeader(
+            previous_hash=block_orm.previous_hash,
+            merkle_root=block_orm.merkle_root,
+            timestamp=block_orm.timestamp,
+            nonce=block_orm.nonce,
+            difficulty=block_orm.difficulty,
+            hash=header_hash
+        )
+
+        # Convert DB transactions to API transactions using Transaction.from_orm
+        api_transactions = [Transaction.from_orm(tx) for tx in block_orm.transactions]
+
+        return cls(
+            index=block_orm.index,
+            transactions=api_transactions,
+            merkle_root=block_orm.merkle_root,
+            header=api_header,
+            hash=block_orm.hash, # This is the block's hash, from db_models.Block
+        )
+
+    # Removed: model_config = ConfigDict(from_attributes=True) - Keep this removed for Block
