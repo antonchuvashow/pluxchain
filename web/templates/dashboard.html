@@ -10,11 +10,50 @@
     <hr>
     <h2>Node Status</h2>
     <ul>
-        <li><strong>Chain Length:</strong> {{ chain_length }} blocks</li>
-        <li><strong>Pending Transactions:</strong> {{ pending_tx_count }}</li>
+        <li><strong>Chain Length:</strong> <a href="/panel/blocks">{{ chain_length }} blocks</a></li>
+        <li><strong>Total Confirmed Transactions:</strong> <a href="/panel/transactions">{{ total_tx_count }}</a></li>
+        <li><strong>Pending Transactions:</strong> {{ pending_txs|length }}</li>
     </ul>
 
-    <h2>Latest Blocks</h2>
+    <h2>Pending Transactions ({{ pending_txs|length }})</h2>
+    {% if pending_txs %}
+    <table>
+        <thead>
+            <tr>
+                <th>Sender</th>
+                <th>Receiver</th>
+                <th>Amount</th>
+                <th>Timestamp</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for tx in pending_txs %}
+            <tr>
+                <td>
+                    {% if tx.sender|length > 40 %}
+                        {{ tx.sender[:40] }}...
+                    {% else %}
+                        {{ tx.sender }}
+                    {% endif %}
+                </td>
+                <td>
+                    {% if tx.receiver|length > 40 %}
+                        {{ tx.receiver[:40] }}...
+                    {% else %}
+                        {{ tx.receiver }}
+                    {% endif %}
+                </td>
+                <td>{{ tx.amount }}</td>
+                <td>{{ tx.timestamp | datetime }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No pending transactions.</p>
+    {% endif %}
+
+    <h2>Latest 10 Blocks</h2>
     <table>
         <thead>
             <tr>
@@ -30,7 +69,7 @@
                 <td>{{ block.index }}</td>
                 <td><a href="/panel/block/{{ block.index }}">{{ block.hash[:20] }}...</a></td>
                 <td>{{ block.transactions_count }}</td>
-                <td>{{ block.timestamp }}</td>
+                <td>{{ block.timestamp | datetime }}</td>
             </tr>
             {% endfor %}
         </tbody>
