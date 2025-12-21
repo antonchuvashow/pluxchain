@@ -1,7 +1,10 @@
+import os
 from contextlib import asynccontextmanager
 from http import HTTPStatus
+
 import uvicorn
 from fastapi import FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from config import settings
@@ -10,6 +13,8 @@ from db.blockchain_dao import BlockchainDAO
 from models.api_models import Block as APIBlock, SignedTransaction
 from models.core_models import Blockchain, Transaction, Block
 from services.transaction_validator import TransactionValidator
+from web.connection_manager import manager
+from web.routes import router as web_router
 
 # --- Global State ---
 dao: BlockchainDAO | None = None
@@ -20,8 +25,9 @@ blockchain: Blockchain | None = None
 async def lifespan(app: FastAPI):
     global dao, blockchain
     print("Initializing application...")
-    print(f"Using database at: {settings.database_url}")
-    db_session.global_init(settings.database_url)
+    db_path = os.getenv("DATABASE_URL", "db/block.sqlite")
+    print(f"Using database at: {db_path}")
+    db_session.global_init(db_path)
     dao = BlockchainDAO()
     blockchain = Blockchain(dao)
     print("Initialization complete.")
@@ -31,16 +37,23 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+# --- Mount Static Files and Include Web Router ---
+app.mount("/static", StaticFiles(directory="web/static"), name="static")
+app.include_router(web_router, prefix="/panel", tags=["Web Panel"])
+
 
 # --- API Models for Requests ---
 class MineRequest(BaseModel):
     miner_address: str
 
 
-# ============== ТРАНЗАКЦИИ ==============
+# ============== API ENDPOINTS ==============
 
 @app.post("/transactions", status_code=HTTPStatus.CREATED)
-def receive_transaction(signed_tx: SignedTransaction):
+async def receive_transaction(signed_tx: SignedTransaction):
+    """
+    Принимает подписанную транзакцию и уведомляет клиентов через WebSocket.
+    """
     validator = TransactionValidator(
         dao=dao,
         pending_transactions=blockchain.current_transactions
@@ -56,6 +69,10 @@ def receive_transaction(signed_tx: SignedTransaction):
         timestamp=signed_tx.transaction.timestamp
     )
     blockchain.current_transactions.append(tx)
+
+    # Broadcast the new pending transaction to all connected clients
+    await manager.broadcast({"type": "new_pending_tx", "data": tx.to_dict()})
+
     return {"message": "Transaction accepted", "tx_hash": tx.calculate_hash()}
 
 
@@ -67,12 +84,13 @@ def get_pending_transactions():
     }
 
 
-# ============== МАЙНИНГ ==============
-
 @app.post("/blocks/mine", status_code=HTTPStatus.CREATED)
-def mine_block(request: MineRequest):
+async def mine_block(request: MineRequest):
+    """
+    Майнит новый блок, включая транзакцию-награду, и уведомляет клиентов.
+    """
     reward_tx = Transaction(
-        sender=TransactionValidator.SYSTEM_ADDRESS,
+        sender=settings.system_address,
         receiver=request.miner_address,
         amount=settings.mining_reward
     )
@@ -95,6 +113,9 @@ def mine_block(request: MineRequest):
     blockchain.new_block(new_api_block)
     blockchain.current_transactions = []
 
+    # Broadcast that a new block has been mined
+    await manager.broadcast({"type": "new_block_mined", "data": {"index": new_api_block.index}})
+
     return {
         "message": "Block mined successfully",
         "block": {
@@ -106,8 +127,6 @@ def mine_block(request: MineRequest):
         }
     }
 
-
-# ============== ЦЕПОЧКА ==============
 
 @app.get("/chain")
 def get_chain():
@@ -135,8 +154,6 @@ def get_block(block_id: int):
     transactions = dao.get_transactions_by_block(block_id)
     return {"block": block, "transactions": transactions}
 
-
-# ============== БАЛАНС ==============
 
 @app.get("/balance/{address}")
 def get_balance(address: str):

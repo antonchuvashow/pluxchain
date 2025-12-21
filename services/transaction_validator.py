@@ -17,8 +17,6 @@ class ValidationResult:
 class TransactionValidator:
     """Сервис для валидации подписанных транзакций."""
 
-    SYSTEM_ADDRESS = "0" * 40
-
     def __init__(self, dao: BlockchainDAO, pending_transactions: list = None):
         self.dao = dao
         self.pending_transactions = pending_transactions or []
@@ -31,8 +29,10 @@ class TransactionValidator:
             return ValidationResult(False, "Sender and receiver addresses are required")
         if tx.amount <= 0:
             return ValidationResult(False, "Amount must be positive")
-        if tx.sender == self.SYSTEM_ADDRESS:
-            return ValidationResult(True)
+
+        # The backdoor is now removed. The system address can no longer be used
+        # as a sender in externally submitted transactions. It can only be used
+        # internally by the node for genesis blocks and mining rewards.
 
         signature_result = self._validate_signature(signed_tx)
         if not signature_result.is_valid:
@@ -65,7 +65,7 @@ class TransactionValidator:
         confirmed = self._get_confirmed_balance(tx.sender)
         pending_outgoing = self._get_pending_outgoing(tx.sender)
         pending_incoming = self._get_pending_incoming(tx.sender)
-        
+
         available = confirmed + pending_incoming - pending_outgoing
 
         if available < tx.amount:

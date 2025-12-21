@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>PluxChain Node Panel</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <h1>PluxChain Node Dashboard</h1>
+    <hr>
+    <h2>Node Status</h2>
+    <ul>
+        <li><strong>Chain Length:</strong> <a href="/panel/blocks">{{ chain_length }} blocks</a></li>
+        <li><strong>Total Confirmed Transactions:</strong> <a href="/panel/transactions">{{ total_tx_count }}</a></li>
+        <li><strong>Pending Transactions:</strong> <span id="pending-tx-count">{{ pending_txs|length }}</span></li>
+    </ul>
+
+    <h2>Pending Transactions (<span id="pending-tx-count-header">{{ pending_txs|length }}</span>)</h2>
+    {% if pending_txs %}
+    <table id="pending-tx-table">
+        <thead>
+            <tr>
+                <th>Sender</th>
+                <th>Receiver</th>
+                <th>Amount</th>
+                <th>Timestamp</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for tx in pending_txs %}
+            <tr>
+                <td>
+                    {% if tx.sender|length > 40 %}
+                        {{ tx.sender[:40] }}...
+                    {% else %}
+                        {{ tx.sender }}
+                    {% endif %}
+                </td>
+                <td>
+                    {% if tx.receiver|length > 40 %}
+                        {{ tx.receiver[:40] }}...
+                    {% else %}
+                        {{ tx.receiver }}
+                    {% endif %}
+                </td>
+                <td>{{ tx.amount }}</td>
+                <td>{{ tx.timestamp | datetime }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p id="no-pending-txs">No pending transactions.</p>
+    {% endif %}
+
+    <h2>Latest 10 Blocks</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Index</th>
+                <th>Hash</th>
+                <th>Transactions</th>
+                <th>Timestamp</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for block in latest_blocks %}
+            <tr>
+                <td>{{ block.index }}</td>
+                <td><a href="/panel/block/{{ block.index }}">{{ block.hash[:20] }}...</a></td>
+                <td>{{ block.transactions_count }}</td>
+                <td>{{ block.timestamp | datetime }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            const wsScheme = window.location.protocol === "https:" ? "wss" : "ws";
+            const wsURL = `${wsScheme}://${window.location.host}/panel/ws`;
+            const socket = new WebSocket(wsURL);
+
+            socket.onopen = function(event) {
+                console.log("WebSocket connection established.");
+            };
+
+            socket.onmessage = function(event) {
+                const message = JSON.parse(event.data);
+                console.log("Received message:", message);
+
+                if (message.type === "new_pending_tx" || message.type === "new_block_mined") {
+                    // Simple and effective: just reload the page to see the new state.
+                    // A more advanced implementation could update the DOM directly.
+                    console.log("New activity detected, reloading page...");
+                    window.location.reload();
+                }
+            };
+
+            socket.onclose = function(event) {
+                console.log("WebSocket connection closed.");
+            };
+
+            socket.onerror = function(error) {
+                console.error("WebSocket error:", error);
+            };
+        });
+    </script>
+</body>
+</html>

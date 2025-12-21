@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>All Blocks - PluxChain</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <h1>All Blocks ({{ total_count }})</h1>
+    <a href="/panel/">&larr; Back to Dashboard</a>
+    <hr>
+
+    {% include '_pagination.html' %}
+
+    <table>
+        <thead>
+            <tr>
+                <th>Index</th>
+                <th>Hash</th>
+                <th>Transactions</th>
+                <th>Timestamp</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for block in blocks %}
+            <tr>
+                <td>{{ block.index }}</td>
+                <td><a href="/panel/block/{{ block.index }}">{{ block.hash[:40] }}...</a></td>
+                <td>{{ block.transactions_count }}</td>
+                <td>{{ block.timestamp | datetime }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    {% include '_pagination.html' %}
+
+</body>
+</html>

@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>All Transactions - PluxChain</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <h1>All Confirmed Transactions ({{ total_count }})</h1>
+    <a href="/panel/">&larr; Back to Dashboard</a>
+    <hr>
+
+    {% include '_pagination.html' %}
+
+    <table>
+        <thead>
+            <tr>
+                <th>Block #</th>
+                <th>Sender</th>
+                <th>Receiver</th>
+                <th>Amount</th>
+                <th>Timestamp</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for tx in transactions %}
+            <tr>
+                <td><a href="/panel/block/{{ tx.block_id }}">{{ tx.block_id }}</a></td>
+                <td>
+                    {% if tx.sender|length > 40 %}
+                        {{ tx.sender[:40] }}...
+                    {% else %}
+                        {{ tx.sender }}
+                    {% endif %}
+                </td>
+                <td>
+                    {% if tx.receiver|length > 40 %}
+                        {{ tx.receiver[:40] }}...
+                    {% else %}
+                        {{ tx.receiver }}
+                    {% endif %}
+                </td>
+                <td>{{ tx.amount }}</td>
+                <td>{{ tx.timestamp | datetime }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    {% include '_pagination.html' %}
+
+</body>
+</html>

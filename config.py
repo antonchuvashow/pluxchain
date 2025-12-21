@@ -11,8 +11,13 @@ class Settings(BaseSettings):
     database_url: str = "db/block.sqlite"
 
     # --- Blockchain ---
+    system_address: str = "0" * 40
     mining_reward: float = 10.0
     difficulty: int = 4  # The number of leading zeros for a valid hash
+    
+    # --- Web Panel ---
+    # The address that receives rewards when mining is triggered from the web panel
+    panel_miner_address: str = "0" * 40
 
     # --- Pydantic-Settings Configuration ---
     # This tells pydantic-settings to look for a .env file if you want to use one.
