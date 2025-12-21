@@ -131,13 +131,13 @@ uvicorn app:app --host 0.0.0.0 --port 8000
 **Терминал 1 (Узел 1):**
 ```bash
 # Запустите первый узел на порту 8000, используя переменные из .env.node1
-uvicorn app:app --host 0.0.0.0 --port 8000 --env-file .env.node1
+uvicorn app:app --host 0.0.0.0 --port 8000 --env-file env.node1
 ```
 
 **Терминал 2 (Узел 2):**
 ```bash
 # Запустите второй узел на порту 8001, используя переменные из .env.node2
-uvicorn app:app --host 0.0.0.0 --port 8001 --env-file .env.node2
+uvicorn app:app --host 0.0.0.0 --port 8001 --env-file env.node2
 ```
 
 Теперь у вас есть два узла. Вы можете отправить транзакцию на один из них, замайнить блок, а затем запустить синхронизацию на другом (`POST /nodes/resolve`), чтобы увидеть, как он скачает себе новую цепочку.
