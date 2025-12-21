@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     database_url: str = "db/block.sqlite"
 
     # --- Blockchain ---
+    system_address: str = "0" * 40
     mining_reward: float = 10.0
     difficulty: int = 4  # The number of leading zeros for a valid hash
     

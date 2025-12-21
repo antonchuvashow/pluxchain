@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request, HTTPException, Query
+from fastapi import APIRouter, Request, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from datetime import datetime
@@ -7,6 +7,7 @@ import math
 # Import the global app objects and settings
 import app as main_app
 from config import settings
+from .connection_manager import manager
 
 # Create a router for the web panel
 router = APIRouter()
@@ -19,6 +20,19 @@ templates.env.filters["datetime"] = lambda ts: datetime.fromtimestamp(ts).strfti
 
 ITEMS_PER_PAGE = 20
 
+
+@router.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    """The WebSocket endpoint for real-time updates."""
+    await manager.connect(websocket)
+    try:
+        while True:
+            # Keep the connection alive by waiting for messages
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+
+
 @router.get("/", response_class=HTMLResponse)
 async def get_dashboard(request: Request):
     """
@@ -27,12 +41,11 @@ async def get_dashboard(request: Request):
     if not main_app.blockchain or not main_app.dao:
         raise HTTPException(status_code=503, detail="Application not initialized")
 
-    # Get data directly from your application's state
     chain_length = main_app.dao.get_total_blocks_count()
     pending_txs = main_app.blockchain.current_transactions
     total_tx_count = main_app.dao.get_total_transactions_count()
     
-    all_blocks = main_app.dao.get_all_blocks(limit=10) # Get latest 10 for dashboard
+    all_blocks = main_app.dao.get_all_blocks(limit=10)
     
     display_blocks = []
     for block in all_blocks:
