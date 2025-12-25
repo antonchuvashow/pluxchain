@@ -4,7 +4,7 @@ import uvicorn
 import os
 import httpx
 import logging
-from fastapi import FastAPI, HTTPException, Body, Query
+from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 from fastapi.staticfiles import StaticFiles
 
@@ -27,7 +27,7 @@ blockchain: Blockchain | None = None
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(_: FastAPI):
     global dao, blockchain
     logger.info("Initializing application...")
     db_path = os.getenv("DATABASE_URL", "db/block.sqlite")
@@ -103,7 +103,7 @@ app.include_router(web_router, prefix="/panel", tags=["Веб-панель"])
 
 # --- API Models for Requests ---
 class NodeRegisterRequest(BaseModel):
-    address: str = Field(..., example="127.0.0.1:8001", description="Адрес узла (хост:порт)")
+    address: str = Field(..., json_schema_extra={"example": "127.0.0.1:8001"}, description="Адрес узла (хост:порт)")
 
 
 # ============== NETWORK ENDPOINTS ==============
@@ -292,7 +292,7 @@ def get_chain(
             difficulty=block_db.difficulty,
             hash=block_db.hash
         )
-        transactions = [APITransaction.from_orm(tx) for tx in block_db.transactions]
+        transactions = [APITransaction.model_validate(tx) for tx in block_db.transactions]
 
         api_block = APIBlock(
             index=block_db.index,

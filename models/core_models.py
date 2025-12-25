@@ -188,59 +188,66 @@ class Blockchain(object):
         from models.api_models import Block as APIBlock
         neighbours = self.nodes
         new_chain = None
-        max_length = self.dao.get_chain_length()
+        # Use get_total_blocks_count which exists and is used elsewhere
+        max_length = self.dao.get_total_blocks_count()
+        authoritative_node_url = None
+        
         logger.info(f"Starting conflict resolution. Current chain length: {max_length}")
+        logger.info(f"Known neighbours: {list(neighbours)}")
+        logger.info(f"My address: {settings.my_network_address}")
 
         async with httpx.AsyncClient(timeout=10.0) as client:
+            # Iterate through all known nodes to find the longest valid chain
             for node in neighbours:
-                if node == settings.my_address:
+                if node == settings.my_network_address:
+                    logger.debug(f"Skipping self ({node}).")
                     continue
-                logger.info(f"Checking chain headers on node {node}...")
+
+                logger.info(f"--> Querying node: {node}")
                 try:
-                    # Step 1: Get only headers from the neighbor
-                    response = await client.get(f'http://{node}/chain/headers?page_size=1') # Get length first
+                    # 1. Get the length of the chain on the neighbor node
+                    # We can get this from the /chain endpoint without fetching all blocks
+                    response = await client.get(f'http://{node}/chain?page_size=1')
                     if response.status_code != 200:
-                        logger.warning(f"Node {node} responded with status {response.status_code} for headers length.")
+                        logger.warning(f"Node {node} responded with status {response.status_code} for chain length.")
                         continue
+                    
+                    remote_length = response.json()['length']
+                    logger.info(f"Node {node} reports chain length: {remote_length}. Current max known length: {max_length}")
 
-                    length = response.json()['length']
-                    logger.info(f"Node {node} has chain length: {length}")
+                    # 2. If the neighbor's chain is longer, it's a candidate.
+                    if remote_length > max_length:
+                        logger.info(f"Found a candidate for the longest chain at {node} (length {remote_length}). Downloading for verification...")
+                        
+                        # 3. Download the full chain from the candidate node
+                        full_chain_response = await client.get(f'http://{node}/chain?page_size={remote_length}')
+                        if full_chain_response.status_code != 200:
+                            logger.warning(f"Failed to download full chain from {node}. Status: {full_chain_response.status_code}")
+                            continue
 
-                    if length > max_length:
-                        logger.info(f"Found potentially longer chain headers on {node}. Downloading all headers...")
-                        full_headers_response = await client.get(f'http://{node}/chain/headers?page_size={length}')
-                        if full_headers_response.status_code == 200:
-                            headers_data = full_headers_response.json()['headers']
-                            if self.valid_chain_headers(headers_data):
-                                logger.info(f"Validated longer chain headers from node {node}. New length: {length}")
-                                
-                                # Step 2: If headers are valid and longer, then download the full chain
-                                logger.info(f"Headers are valid, downloading full chain from {node}...")
-                                full_chain_response = await client.get(f'http://{node}/chain?page_size={length}')
-                                if full_chain_response.status_code == 200:
-                                    chain_data = full_chain_response.json()['chain']
-                                    if self.valid_chain(chain_data): # Validate full chain
-                                        logger.info(f"Validated full longer chain from node {node}.")
-                                        max_length = length
-                                        new_chain = chain_data
-                                    else:
-                                        logger.warning(f"Full chain from node {node} is invalid after header validation.")
-                                else:
-                                    logger.warning(f"Failed to fetch full chain from {node}. Status: {full_chain_response.status_code}")
-                            else:
-                                logger.warning(f"Chain headers from node {node} are invalid.")
+                        chain_data = full_chain_response.json()['chain']
+                        
+                        # 4. Validate the downloaded chain
+                        if self.valid_chain(chain_data):
+                            logger.info(f"Successfully validated chain from {node}. It is now the authoritative chain.")
+                            # This is now the longest valid chain we've found so far
+                            max_length = remote_length
+                            new_chain = chain_data
+                            authoritative_node_url = node
                         else:
-                            logger.warning(f"Failed to fetch full headers from {node}. Status: {full_headers_response.status_code}")
+                            logger.warning(f"Downloaded chain from {node} is INVALID. Ignoring.")
+                    else:
+                        logger.info(f"Chain from {node} is not longer than the current longest ({max_length}).")
+
                 except (httpx.RequestError, json.JSONDecodeError) as e:
                     logger.error(f"Could not connect to or parse data from node {node}: {e}")
-                    continue
 
-        if new_chain:
-            logger.info("Replacing the current chain with a new, longer, valid chain.")
+        # 5. After checking all neighbors, if we found a longer valid chain, replace ours.
+        if new_chain and authoritative_node_url:
+            logger.info(f"Replacing local chain with the longer valid chain from {authoritative_node_url}.")
             self.dao.replace_chain(new_chain)
-            self.current_transactions = []
-            # Reload the in-memory chain from the database
-            self.chain = [APIBlock.from_db_model(b) for b in self.dao.get_all_blocks()]
+            self.current_transactions = []  # Clear mempool
+            self.chain = [APIBlock.from_db_model(b) for b in self.dao.get_all_blocks()] # Reload from DB
             return True
 
         logger.info("Current chain is authoritative. No replacement needed.")
