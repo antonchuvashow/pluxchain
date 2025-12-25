@@ -100,29 +100,22 @@ class Blockchain(object):
             raise ValueError('Invalid URL')
 
     def valid_chain(self, chain: list[dict]) -> bool:
-        # The chain is ordered from oldest to newest (index ascending).
-        # We need to validate from the second block onwards.
         if not chain:
             return False
 
-        # Validate genesis block first
-        genesis_block = chain[0]
-        if not genesis_block['hash'].startswith('0' * genesis_block['header']['difficulty']): # Fixed here
-            logger.warning("Chain validation failed: Genesis block PoW is invalid.")
-            return False
-
-        for i in range(1, len(chain)):
+        for i in range(len(chain)):
             block = chain[i]
-            last_block = chain[i-1]
-
-            # 1. Check that the hash of the previous block in the current block's header
-            #    matches the actual hash of the previous block.
-            if block['header']['previous_hash'] != last_block['hash']:
-                logger.warning(f"Chain validation failed: Previous hash mismatch at index {block['index']}.")
+            
+            # 1. Verify that the block's difficulty matches the node's own setting.
+            # This prevents accepting chains with a lower (cheaper) proof-of-work.
+            if block['header']['difficulty'] != settings.difficulty:
+                logger.warning(
+                    f"Chain validation failed: Invalid difficulty at index {block['index']}. "
+                    f"Block has difficulty {block['header']['difficulty']} but node requires {settings.difficulty}."
+                )
                 return False
 
-            # 2. Check the Proof of Work for each block.
-            # Reconstruct the header to calculate its hash
+            # 2. Re-calculate the block's hash and verify its integrity and PoW.
             header_string = f"{block['header']['previous_hash']}{block['merkle_root']}{block['header']['timestamp']}{block['header']['nonce']}{block['header']['difficulty']}"
             calculated_hash = hashlib.sha256(header_string.encode()).hexdigest()
 
@@ -130,9 +123,16 @@ class Blockchain(object):
                 logger.warning(f"Chain validation failed: Block hash mismatch at index {block['index']}.")
                 return False
 
-            if not block['hash'].startswith('0' * block['header']['difficulty']): # Fixed here
-                logger.warning(f"Chain validation failed: PoW is invalid at index {block['index']}.")
+            if not block['hash'].startswith('0' * settings.difficulty):
+                logger.warning(f"Chain validation failed: PoW is invalid at index {block['index']} for difficulty {settings.difficulty}.")
                 return False
+
+            # 3. For all blocks after the genesis block, verify the previous_hash link.
+            if i > 0:
+                last_block = chain[i - 1]
+                if block['header']['previous_hash'] != last_block['hash']:
+                    logger.warning(f"Chain validation failed: Previous hash mismatch at index {block['index']}.")
+                    return False
         
         logger.info("Full chain validation successful.")
         return True
