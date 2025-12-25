@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  node1:
+    build: .
+    container_name: pluxchain-node1
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./db:/app/db
+    environment:
+      - MY_NETWORK_ADDRESS=node1:8000
+      - DATABASE_URL=db/block.sqlite
+      - DIFFICULTY=4
+      - SEED_NODES=[] # This is the first node, so no seeds
+    command: uvicorn app:app --host 0.0.0.0 --port 8000
